@@ -503,6 +503,16 @@ found in the LICENSE file.
               };
               this.fetchDiff();
             }
+
+            // Load a manifest.
+            if (this.fetchManifestForTestList) {
+              const shas = (runs || []).reduce((set, run) => {
+                set.add(run.revision);
+                return set;
+              }, new Set());
+              const sha = shas.size == 1 ? Array.from(shas)[0] : 'latest';
+              this.fetchManifestForSHA(sha);
+            }
           }),
           () => {
             this.resultsLoadFailed = true;
@@ -544,7 +554,9 @@ found in the LICENSE file.
             this.searchResults = json.results;
             this.refreshDisplayedNodes();
           }),
-          () => {
+          (e) => {
+            // eslint-disable-next-line no-console
+            console.log(`Failed to load: ${e}`);
             this.resultsLoadFailed = true;
           }
         );
@@ -569,19 +581,30 @@ found in the LICENSE file.
         );
       }
 
+      fetchManifestForSHA(sha) {
+        const url = new URL('/api/manifest', window.location);
+        const isSpecificSHA = sha && !this.computeIsLatest(sha);
+        if (isSpecificSHA) {
+          url.searchParams.set('sha', sha);
+        }
+        return fetch(url).then(
+          async r => {
+            if (!r.ok) {
+              // Fall back to the latest manifest if we 404 for a specific SHA.
+              return r.status === 404
+                && isSpecificSHA
+                && this.fetchManifestForSHA('latest')
+            }
+            let manifest = await r.json();
+            manifest.sha = sha || r.headers && r.headers['x-wpt-sha'];
+            return manifest;
+          }
+        );
+      }
+
       pathUpdated(path) {
         super.pathUpdated(path);
         this.refreshDisplayedNodes();
-        this.fetchManifest(path);
-      }
-
-      async fetchManifest(path) {
-        if (!this.computePathIsATestFile(path)) {
-          return;
-        }
-        path = this.encodeTestPath(path);
-        this.manifest = null; // Clear ASAP.
-        this.manifest = await fetch(`/api/manifest?path=${path}`).then(r => r.json());
       }
 
       nodeSort(a, b) {
